@@ -2,30 +2,9 @@ import numpy as np
 from scipy.interpolate import interp1d
 import matplotlib.pyplot as plt
 import seaborn as sns
+from helper_functions import normalize_signal
 
-def normalize_signal(signal):
-    """
-    Normalize the signal to the range [0, 1].
 
-    Parameters
-    ----------
-    signal : 1D array
-        The signal to normalize.
-
-    Returns
-    -------
-    normalized_signal : 1D array
-        The normalized signal.
-    
-    Notes
-    -----
-    Used within the calculate_direct_af and calculate_and_plot_direct_af function.
-        
-    Example Usage
-    -------
-    normalize_signal(df['Signal'].values)
-    """
-    return (signal - signal.min()) / (signal.max() - signal.min())
 
 
 def calculate_direct_af(volume, signal):
