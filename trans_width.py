@@ -67,6 +67,11 @@ def calculate_and_plot_transwidth(df, batch):
     """
     batch_data = df[df['Batch'] == batch]
     
+    # Check if the batch exists in the dataframe
+    if batch_data.empty:
+        print(f"Error: Batch '{batch}' not found in the dataframe.")
+        return None
+    
     # Sort the data by Volume
     batch_data = batch_data.sort_values('Volume')
     
