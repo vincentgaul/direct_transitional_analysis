@@ -70,7 +70,7 @@ def calculate_and_plot_direct_af(df, batch):
     df : pandas.DataFrame
         The dataframe containing the data.
     batch : str
-        The batch number to calculate and plot the Direct AF for.
+        The batch to calculate and plot the Direct AF for.
 
     Returns
     -------
