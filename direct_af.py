@@ -38,8 +38,7 @@ def calculate_direct_af(volume, signal):
     volume = volume[sorted_indices]
     signal = signal[sorted_indices]
 
-    # Normalize the signal
-    normalized_signal = normalize_signal(signal)
+
 
     # Create interpolation function
     interp_func = interp1d(normalized_signal, volume, kind='linear', bounds_error=False, fill_value="extrapolate")
