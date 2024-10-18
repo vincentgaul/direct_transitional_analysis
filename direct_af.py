@@ -7,53 +7,57 @@ from helper_functions import normalize_signal
 
 
 
-def calculate_direct_af(volume, signal):
-    # Sort the data by Volume
+def calculate_direct_af(df, volume_col, signal_col, batch_col=None):
     """
-    Calculate the Direct AF value from a pair of 1D arrays, 
-    `volume` and `signal`, containing the volume and signal data, respectively.
+    Calculate the Direct AF value for each batch of data from a DataFrame.
 
     Parameters
     ----------
-    volume : 1D array
-        The volume data.
-    signal : 1D array
-        The signal data.
+    df : pandas DataFrame
+        DataFrame containing the volume, signal, and optionally batch data.
+    volume_col : str
+        Column name for volume data.
+    signal_col : str
+        Column name for signal data.
+    batch_col : str, optional
+        Column name for batch data. If None, calculates for the entire dataset.
 
     Returns
     -------
-    direct_af : float
-        The Direct AF value.
-
-    Notes
-    -----
-    Will calculate Direct AF on all data points in df. 
-    Pass each batch individually to calculate the Direct AF for each batch.
-    
-    Example Usage
-    -------
-    calculate_direct_af(df['Volume'].values, df['Signal'].values)
+    direct_af : pandas Series
+        A Series of Direct AF values, one for each batch (or a single value if no batch_col is provided).
     """
-    sorted_indices = np.argsort(volume)
-    volume = volume[sorted_indices]
-    signal = signal[sorted_indices]
 
+    def compute_direct_af(volume, signal):
+        # Sort the data by Volume
+        sorted_indices = np.argsort(volume)
+        volume = volume[sorted_indices]
+        signal = signal[sorted_indices]
+        
+        # Normalize the signal between 0 and 1
+        normalized_signal = (signal - np.min(signal)) / (np.max(signal) - np.min(signal))
 
+        # Create interpolation function
+        interp_func = interp1d(normalized_signal, volume, kind='linear', bounds_error=False, fill_value="extrapolate")
 
-    # Create interpolation function
-    interp_func = interp1d(signal, volume, kind='linear', bounds_error=False, fill_value="extrapolate")
+        thresholds_low = [0.05, 0.10, 0.15, 0.20, 0.25, 0.30]
+        thresholds_high = [0.95, 0.90, 0.85, 0.80, 0.75, 0.70]
+        cv_mid = interp_func(0.5)
 
-    thresholds_low = [0.05, 0.10, 0.15, 0.20, 0.25, 0.30]
-    thresholds_high = [0.95, 0.90, 0.85, 0.80, 0.75, 0.70]
-    cv_mid = interp_func(0.5)
+        ratios = []
+        for low, high in zip(thresholds_low, thresholds_high):
+            cv_a = interp_func(low)
+            cv_b = interp_func(high)
+            ratios.append((cv_b - cv_mid) / (cv_mid - cv_a))
 
-    ratios = []
-    for low, high in zip(thresholds_low, thresholds_high):
-        cv_a = interp_func(low)
-        cv_b = interp_func(high)
-        ratios.append((cv_b - cv_mid) / (cv_mid - cv_a))
+        return np.mean(ratios)
 
-    return np.mean(ratios)
+    if batch_col:
+        # Group by batch and apply the Direct AF calculation to each group
+        return df.groupby(batch_col).apply(lambda x: compute_direct_af(x[volume_col].values, x[signal_col].values))
+    else:
+        # Apply the calculation on the entire dataset
+        return compute_direct_af(df[volume_col].values, df[signal_col].values)
 
 
 
