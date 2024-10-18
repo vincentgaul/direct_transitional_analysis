@@ -4,37 +4,55 @@ from scipy.interpolate import interp1d
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-def calculate_transwidth(volume, signal):
+
+
+def calculate_transwidth(df, volume_col, signal_col, batch_col=None):
     """
-    Calculate the Transwidth metric from a pair of 1D arrays, 
-    `volume` and `signal`, containing the volume and signal data, respectively.
+    Calculate the Transwidth metric from a DataFrame, grouping by batches if a batch column is provided.
 
     Parameters
     ----------
-    volume : 1D array
-        The volume data.
-    signal : 1D array
-        The signal data.
+    df : pandas DataFrame
+        DataFrame containing the volume, signal, and optionally batch data.
+    volume_col : str
+        Column name for volume data.
+    signal_col : str
+        Column name for signal data.
+    batch_col : str, optional
+        Column name for batch data. If None, calculates for the entire dataset.
 
     Returns
     -------
-    transwidth : float
-        The Transwidth value.
+    transwidth : pandas Series or float
+        Transwidth values for each batch if batch_col is provided, or a single Transwidth value if no batch_col is given.
 
     Notes
     -----
-    Will calculate Transwidth on all data points in df. 
-    Pass each batch individually to calculate the Transwidth for each batch.
-
-    Example Usage
-    -------
-    calculate_transwidth(df['Volume'].values, df['Signal'].values)
+    Transwidth is calculated as the difference between the volume values at the 0.05 and 0.95 signal levels.
     """
-    
-    
-    cv_5 = np.interp(0.05, signal, volume)
-    cv_95 = np.interp(0.95, signal, volume)
-    return cv_95 - cv_5
+
+    def compute_transwidth(volume, signal):
+        # Ensure volume and signal are sorted together by signal for interpolation
+        sorted_indices = np.argsort(signal)
+        volume = volume[sorted_indices]
+        signal = signal[sorted_indices]
+        
+        # Interpolate to find volume values at 0.05 and 0.95 signal levels
+        cv_5 = np.interp(0.05, signal, volume)
+        cv_95 = np.interp(0.95, signal, volume)
+        
+        # Return the Transwidth value
+        return cv_95 - cv_5
+
+    if batch_col:
+        # Group by batch and apply the Transwidth calculation to each group
+        return df.groupby(batch_col).apply(lambda x: compute_transwidth(x[volume_col].values, x[signal_col].values))
+    else:
+        # Apply the calculation on the entire dataset
+        return compute_transwidth(df[volume_col].values, df[signal_col].values)
+
+
+
 
 
 
