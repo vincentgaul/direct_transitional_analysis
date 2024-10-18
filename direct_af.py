@@ -41,7 +41,7 @@ def calculate_direct_af(volume, signal):
 
 
     # Create interpolation function
-    interp_func = interp1d(normalized_signal, volume, kind='linear', bounds_error=False, fill_value="extrapolate")
+    interp_func = interp1d(signal, volume, kind='linear', bounds_error=False, fill_value="extrapolate")
 
     thresholds_low = [0.05, 0.10, 0.15, 0.20, 0.25, 0.30]
     thresholds_high = [0.95, 0.90, 0.85, 0.80, 0.75, 0.70]

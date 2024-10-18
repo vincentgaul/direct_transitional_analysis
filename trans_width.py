@@ -31,9 +31,9 @@ def calculate_transwidth(volume, signal):
     calculate_transwidth(df['Volume'].values, df['Signal'].values)
     """
     
-    normalized_signal = normalize_signal(signal)
-    cv_5 = np.interp(0.05, normalized_signal, volume)
-    cv_95 = np.interp(0.95, normalized_signal, volume)
+    
+    cv_5 = np.interp(0.05, signal, volume)
+    cv_95 = np.interp(0.95, signal, volume)
     return cv_95 - cv_5
 
 

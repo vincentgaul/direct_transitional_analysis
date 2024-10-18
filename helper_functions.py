@@ -181,7 +181,7 @@ def calculate_smooth_first_derivative(df, example_batch=None, smooth_original=Tr
     
     # Define the derivative function
     def derivative(group):
-        signal = group['Normalized_Signal']
+        signal = group['Signal']
         volume = group['Volume']
         
         if smooth_original:
