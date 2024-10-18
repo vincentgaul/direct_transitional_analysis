@@ -137,3 +137,91 @@ def normalize_signal(df, example_batch=None):
         plt.show()
     
     return df
+
+
+
+
+def calculate_smooth_first_derivative(df, example_batch=None, smooth_original=True, smooth_derivative=True, window_length=11, polyorder=3):
+    # Group the dataframe by Batch
+    """
+    Calculate the smoothed first derivative for each batch in the dataframe.
+
+    Parameters
+    ----------
+    df : pandas.DataFrame
+        The dataframe containing the data.
+    example_batch : str, optional
+        The batch to plot the smoothed first derivative for (default None).
+    smooth_original : bool, optional
+        Whether to smooth the original signal before calculating the derivative (default True).
+    smooth_derivative : bool, optional
+        Whether to smooth the derivative after calculation (default True).
+    window_length : int, optional
+        The window length for the savgol_filter (default 11).
+    polyorder : int, optional
+        The polynomial order for the savgol_filter (default 3).
+
+    Returns
+    -------
+    df : pandas.DataFrame
+        The dataframe with the smoothed first derivative added as a column.
+
+    Notes
+    -----
+    Used to calculate the smoothed first derivative for each batch in the dataframe.
+    A plot is generated for the example batch to show the smoothed first derivative.
+    """
+    
+    grouped = df.groupby('Batch')
+    
+    # Define the smoothing function
+    def smooth(x):
+        return savgol_filter(x, window_length, polyorder)
+    
+    # Define the derivative function
+    def derivative(group):
+        signal = group['Normalized_Signal']
+        volume = group['Volume']
+        
+        if smooth_original:
+            signal = smooth(signal)
+        
+        # Calculate the gradient
+        grad = np.gradient(signal, volume)
+        
+        if smooth_derivative:
+            grad = smooth(grad)
+        
+        return pd.Series(grad, index=group.index)
+    
+    # Apply smoothing to Normalized_Signal if required
+    if smooth_original:
+        df['Smoothed_Signal'] = grouped['Normalized_Signal'].transform(smooth)
+    
+    # Apply the derivative function to each group
+    df['First_Derivative'] = grouped.apply(derivative).reset_index(level=0, drop=True)
+    
+    # If an example batch is specified, plot it
+    if example_batch is not None:
+        example_batch_data = df[df["Batch"] == example_batch]
+        
+        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 10), sharex=True)
+        
+        # Plot Normalized Signal
+        sns.lineplot(data=example_batch_data, x='Volume', y='Normalized_Signal', ax=ax1, color='blue', label='Original')
+        if smooth_original:
+            sns.lineplot(data=example_batch_data, x='Volume', y='Smoothed_Signal', ax=ax1, color='red', label='Smoothed')
+        ax1.set_title(f'{"Smoothed " if smooth_original else ""}Normalized Signal vs Volume for {example_batch}')
+        ax1.set_ylabel('Normalized Signal')
+        ax1.legend()
+        
+        # Plot First Derivative
+        sns.lineplot(data=example_batch_data, x='Volume', y='First_Derivative', ax=ax2, color='green')
+        ax2.set_title(f'{"Smoothed " if smooth_derivative else ""}First Derivative vs Volume for {example_batch}')
+        ax2.set_xlabel('Volume')
+        ax2.set_ylabel('First Derivative')
+        
+        plt.tight_layout()
+        plt.show()
+    
+    return df
