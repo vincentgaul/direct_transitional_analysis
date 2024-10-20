@@ -2,9 +2,13 @@ import pandas as pd
 import numpy as np
 
 
+import pandas as pd
+import numpy as np
+
 def calculate_direct_af(df, volume_col, signal_col, batch_col=None):
     """
-    Calculate the Direct AF value for each batch of data from a DataFrame.
+    Calculate the Direct AF value for each batch of data from a DataFrame,
+    maintaining the original order of batches.
 
     Parameters
     ----------
@@ -19,8 +23,8 @@ def calculate_direct_af(df, volume_col, signal_col, batch_col=None):
 
     Returns
     -------
-    direct_af : pandas Series
-        A Series of Direct AF values, one for each batch (or a single value if no batch_col is provided).
+    direct_af : pandas Series or float
+        A Series of Direct AF values in the original batch order, or a single float if no batch_col is provided.
     """
 
     def compute_direct_af(volume, signal):
@@ -42,16 +46,37 @@ def calculate_direct_af(df, volume_col, signal_col, batch_col=None):
         return np.mean(ratios)
 
     if batch_col:
-        # Group by batch and apply the Direct AF calculation to each group
-        return df.groupby(batch_col).apply(lambda x: compute_direct_af(x[volume_col].values, x[signal_col].values))
+        # Get unique batches in their original order
+        unique_batches = df[batch_col].unique()
+        
+        # Calculate Direct AF for each batch
+        direct_af_values = []
+        for batch in unique_batches:
+            batch_data = df[df[batch_col] == batch]
+            direct_af = compute_direct_af(batch_data[volume_col].values, batch_data[signal_col].values)
+            direct_af_values.append(direct_af)
+        
+        # Create a Series with the original batch order
+        return pd.Series(direct_af_values, index=unique_batches, name='direct_af')
     else:
         # Apply the calculation on the entire dataset
         return compute_direct_af(df[volume_col].values, df[signal_col].values)
 
+# Usage example:
+# df = pd.DataFrame({
+#     'batch': ['A', 'A', 'B', 'B', 'C', 'C'],
+#     'volume': [1, 2, 3, 4, 5, 6],
+#     'signal': [10, 20, 30, 40, 50, 60]
+# })
+# result = calculate_direct_af(df, 'volume', 'signal', 'batch')
+# print(result)
+
+import pandas as pd
+import numpy as np
 
 def calculate_transwidth(df, volume_col, signal_col, batch_col=None):
     """
-    Calculate the Transwidth metric from a DataFrame, grouping by batches if a batch column is provided.
+    Calculate the Transwidth metric from a DataFrame, maintaining the original order of batches.
 
     Parameters
     ----------
@@ -67,7 +92,7 @@ def calculate_transwidth(df, volume_col, signal_col, batch_col=None):
     Returns
     -------
     transwidth : pandas Series or float
-        Transwidth values for each batch if batch_col is provided, or a single Transwidth value if no batch_col is given.
+        A Series of Transwidth values in the original batch order, or a single float if no batch_col is provided.
 
     Notes
     -----
@@ -88,24 +113,43 @@ def calculate_transwidth(df, volume_col, signal_col, batch_col=None):
         return cv_95 - cv_5
 
     if batch_col:
-        # Group by batch and apply the Transwidth calculation to each group
-        return df.groupby(batch_col).apply(lambda x: compute_transwidth(x[volume_col].values, x[signal_col].values))
+        # Get unique batches in their original order
+        unique_batches = df[batch_col].unique()
+        
+        # Calculate Transwidth for each batch
+        transwidth_values = []
+        for batch in unique_batches:
+            batch_data = df[df[batch_col] == batch]
+            transwidth = compute_transwidth(batch_data[volume_col].values, batch_data[signal_col].values)
+            transwidth_values.append(transwidth)
+        
+        # Create a Series with the original batch order
+        return pd.Series(transwidth_values, index=unique_batches, name='transwidth')
     else:
         # Apply the calculation on the entire dataset
         return compute_transwidth(df[volume_col].values, df[signal_col].values)
+
+# Usage example:
+# df = pd.DataFrame({
+#     'batch': ['A', 'A', 'B', 'B', 'C', 'C'],
+#     'volume': [1, 2, 3, 4, 5, 6],
+#     'signal': [0.1, 0.9, 0.2, 0.8, 0.3, 0.7]
+# })
+# result = calculate_transwidth(df, 'volume', 'signal', 'batch')
+# print(result)
 
 
 
 
 
 def calculate_metrics(df, volume_col, signal_col, batch_col=None):
-   
+
     # Calculate Direct AF values
     direct_af_values = calculate_direct_af(df, volume_col, signal_col, batch_col)
-    
+
     # Calculate Transwidth values
     transwidth_values = calculate_transwidth(df, volume_col, signal_col, batch_col)
-    
+
     # Combine results into a DataFrame
     if batch_col:
         result_df = pd.DataFrame({
@@ -120,11 +164,11 @@ def calculate_metrics(df, volume_col, signal_col, batch_col=None):
             'Direct AF': [direct_af_values],
             'Transwidth': [transwidth_values]
         })
-    
+
     # Sort the DataFrame by the Batch column if batch_col is provided
     if batch_col:
-        result_df = result_df.sort_values(by=batch_col)
-    
+        result_df = result_df.sort_index()
+
     return result_df
 
 
