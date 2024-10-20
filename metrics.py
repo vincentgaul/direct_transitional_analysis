@@ -1,6 +1,102 @@
 import pandas as pd
-from direct_af import calculate_direct_af
-from trans_width import calculate_transwidth
+import numpy as np
+
+
+def calculate_direct_af(df, volume_col, signal_col, batch_col=None):
+    """
+    Calculate the Direct AF value for each batch of data from a DataFrame.
+
+    Parameters
+    ----------
+    df : pandas DataFrame
+        DataFrame containing the volume, signal, and optionally batch data.
+    volume_col : str
+        Column name for volume data.
+    signal_col : str
+        Column name for signal data.
+    batch_col : str, optional
+        Column name for batch data. If None, calculates for the entire dataset.
+
+    Returns
+    -------
+    direct_af : pandas Series
+        A Series of Direct AF values, one for each batch (or a single value if no batch_col is provided).
+    """
+
+    def compute_direct_af(volume, signal):
+        # Sort the data by Volume
+        sorted_indices = np.argsort(volume)
+        volume = volume[sorted_indices]
+        signal = signal[sorted_indices]
+
+        thresholds_low = [0.05, 0.10, 0.15, 0.20, 0.25, 0.30]
+        thresholds_high = [0.95, 0.90, 0.85, 0.80, 0.75, 0.70]
+        
+        # Use np.interp for interpolation
+        signal_range = signal.max() - signal.min()
+        cv_mid = np.interp(0.5 * signal_range + signal.min(), signal, volume)
+        cv_low = np.interp(np.array(thresholds_low) * signal_range + signal.min(), signal, volume)
+        cv_high = np.interp(np.array(thresholds_high) * signal_range + signal.min(), signal, volume)
+
+        ratios = (cv_high - cv_mid) / (cv_mid - cv_low)
+        return np.mean(ratios)
+
+    if batch_col:
+        # Group by batch and apply the Direct AF calculation to each group
+        return df.groupby(batch_col).apply(lambda x: compute_direct_af(x[volume_col].values, x[signal_col].values))
+    else:
+        # Apply the calculation on the entire dataset
+        return compute_direct_af(df[volume_col].values, df[signal_col].values)
+
+
+def calculate_transwidth(df, volume_col, signal_col, batch_col=None):
+    """
+    Calculate the Transwidth metric from a DataFrame, grouping by batches if a batch column is provided.
+
+    Parameters
+    ----------
+    df : pandas DataFrame
+        DataFrame containing the volume, signal, and optionally batch data.
+    volume_col : str
+        Column name for volume data.
+    signal_col : str
+        Column name for signal data.
+    batch_col : str, optional
+        Column name for batch data. If None, calculates for the entire dataset.
+
+    Returns
+    -------
+    transwidth : pandas Series or float
+        Transwidth values for each batch if batch_col is provided, or a single Transwidth value if no batch_col is given.
+
+    Notes
+    -----
+    Transwidth is calculated as the difference between the volume values at the 0.05 and 0.95 signal levels.
+    """
+
+    def compute_transwidth(volume, signal):
+        # Ensure volume and signal are sorted together by signal for interpolation
+        sorted_indices = np.argsort(signal)
+        volume = volume[sorted_indices]
+        signal = signal[sorted_indices]
+        
+        # Interpolate to find volume values at 0.05 and 0.95 signal levels
+        cv_5 = np.interp(0.05, signal, volume)
+        cv_95 = np.interp(0.95, signal, volume)
+        
+        # Return the Transwidth value
+        return cv_95 - cv_5
+
+    if batch_col:
+        # Group by batch and apply the Transwidth calculation to each group
+        return df.groupby(batch_col).apply(lambda x: compute_transwidth(x[volume_col].values, x[signal_col].values))
+    else:
+        # Apply the calculation on the entire dataset
+        return compute_transwidth(df[volume_col].values, df[signal_col].values)
+
+
+
+
 
 def calculate_metrics(df, volume_col, signal_col, batch_col=None):
    
