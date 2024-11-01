@@ -2,7 +2,8 @@ import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 import numpy as np
-from metrics import calculate_direct_af, calculate_transwidth
+from metrics import calculate_direct_af, calculate_transwidth, calculate_inflection_points
+from scipy.signal import find_peaks
 
 
 
@@ -54,8 +55,24 @@ def plot_processed_dataframe(df, batch_col, raw_signal_col, smoothed_signal_col,
 
 
 def create_control_charts(metrics_df, control_limits_df):
+    """
+    Create control charts for Direct AF, Transwidth, and Inflection Points metrics.
+
+    Parameters
+    ----------
+    metrics_df : pandas DataFrame
+        DataFrame containing metrics data with 'Batch', 'Direct AF', 'Transwidth', 
+        and 'Inflection Points' columns.
+    control_limits_df : pandas DataFrame
+        DataFrame containing control limits with 'Metric', 'Mean', 'LCL', 'UCL' columns.
+
+    Returns
+    -------
+    None
+        Displays the control charts.
+    """
     # Ensure the required columns are present in both dataframes
-    required_cols_metrics = ['Batch', 'Direct AF', 'Transwidth']
+    required_cols_metrics = ['Batch', 'Direct AF', 'Transwidth', 'Inflection Points']
     required_cols_limits = ['Metric', 'Mean', 'LCL', 'UCL']
     
     if not all(col in metrics_df.columns for col in required_cols_metrics):
@@ -64,36 +81,65 @@ def create_control_charts(metrics_df, control_limits_df):
         raise ValueError(f"control_limits_df is missing one or more required columns: {required_cols_limits}")
 
     # Create a control chart for each metric
-    metrics = ['Direct AF', 'Transwidth']
+    metrics = ['Direct AF', 'Transwidth', 'Inflection Points']
     
-    for metric in metrics:
+    # Set up the figure layout for all three plots
+    fig, axs = plt.subplots(3, 1, figsize=(12, 18))
+    
+    for idx, (metric, ax) in enumerate(zip(metrics, axs)):
         # Get the control limits for the current metric
         limits = control_limits_df[control_limits_df['Metric'] == metric].iloc[0]
         mean, lcl, ucl = limits['Mean'], limits['LCL'], limits['UCL']
         
         # Create the plot
-        plt.figure(figsize=(12, 6))
-        sns.lineplot(data=metrics_df, x='Batch', y=metric, marker='o')
+        sns.lineplot(data=metrics_df, x='Batch', y=metric, marker='o', ax=ax)
         
         # Add control limits
-        plt.axhline(y=mean, color='g', linestyle='--', label='Mean')
-        plt.axhline(y=lcl, color='r', linestyle='--', label='LCL')
-        plt.axhline(y=ucl, color='r', linestyle='--', label='UCL')
+        ax.axhline(y=mean, color='g', linestyle='--', label='Mean')
+        ax.axhline(y=lcl, color='r', linestyle='--', label='LCL')
+        ax.axhline(y=ucl, color='r', linestyle='--', label='UCL')
         
         # Customize the plot
-        plt.title(f'Control Chart for {metric}')
-        plt.xlabel('Batch')
-        plt.ylabel(metric)
-        plt.legend()
+        ax.set_title(f'Control Chart for {metric}')
+        ax.set_xlabel('Batch')
+        ax.set_ylabel(metric)
+        ax.legend()
         
         # Rotate x-axis labels by 45 degrees
-        plt.xticks(rotation=45, ha='right')
+        ax.tick_params(axis='x', rotation=45)
         
-        # Adjust the layout to prevent cut-off labels
-        plt.tight_layout()
+        # Identify points outside control limits
+        out_of_control = metrics_df[
+            (metrics_df[metric] > ucl) | 
+            (metrics_df[metric] < lcl)
+        ]
         
-        # Show the plot
-        plt.show()
+        # Highlight out-of-control points if any exist
+        if not out_of_control.empty:
+            ax.scatter(
+                out_of_control['Batch'],
+                out_of_control[metric],
+                color='red',
+                s=100,
+                zorder=5,
+                label='Out of Control'
+            )
+            
+            # Add batch labels for out-of-control points
+            for idx, row in out_of_control.iterrows():
+                ax.annotate(
+                    f"Batch {row['Batch']}", 
+                    (row['Batch'], row[metric]),
+                    xytext=(5, 5),
+                    textcoords='offset points',
+                    fontsize=8
+                )
+    
+    # Adjust the layout to prevent overlapping
+    plt.tight_layout()
+    
+    # Show all plots
+    plt.show()
 
 
 import pandas as pd
@@ -142,7 +188,7 @@ def plot_transwidth(df, volume_col, signal_col, batch_col, batch):
     sorted_data = batch_data.sort_values(volume_col)
 
     # Create the plot
-    plt.figure(figsize=(12, 6))
+    plt.figure(figsize=(12, 8))
     sns.scatterplot(data=sorted_data, x=volume_col, y=signal_col, alpha=0.6)
     
     # Interpolate to find volume values at 0.05 and 0.95 signal levels
@@ -216,7 +262,7 @@ def plot_direct_af(df, volume_col, signal_col, batch_col, batch):
     sorted_data = batch_data.sort_values(volume_col)
 
     # Create the plot
-    plt.figure(figsize=(12, 6))
+    plt.figure(figsize=(12, 8))
     sns.scatterplot(data=sorted_data, x=volume_col, y=signal_col, alpha=0.6)
 
     # Calculate the thresholds and corresponding volumes
@@ -255,3 +301,110 @@ def plot_direct_af(df, volume_col, signal_col, batch_col, batch):
 
 # Example usage:
 # plot_direct_af(results, volume_col="Volume", signal_col="normalized_signal", batch_col="Batch", batch="Batch_16")
+
+
+
+
+def plot_inflection_points(df, volume_col, deriv_col, batch_col, batch):
+   """
+   Plot the inflection points calculation for a single batch,
+   showing the first derivative with detected peaks marked.
+
+   Parameters
+   ----------
+   df : pandas DataFrame
+       DataFrame containing the volume, derivative, and batch data.
+   volume_col : str
+       Column name for volume data (x-axis).
+   deriv_col : str
+       Column name for derivative data (y-axis).
+   batch_col : str
+       Column name for batch data.
+   batch : str or int
+       The specific batch to plot.
+
+   Returns
+   -------
+   None
+       Displays the plot using matplotlib.
+   """
+   # Filter the dataframe for the specified batch
+   batch_data = df[df[batch_col] == batch]
+
+   if batch_data.empty:
+       raise ValueError(f"No data found for batch '{batch}' in column '{batch_col}'")
+
+   # Calculate inflection points for the batch
+   inflection_result = calculate_inflection_points(
+       batch_data, 
+       volume_col=volume_col,
+       deriv_col=deriv_col
+   )
+   num_peaks = inflection_result['num_inflection_points']
+
+   # Sort the data by volume for plotting
+   sorted_data = batch_data.sort_values(volume_col)
+   
+   # Calculate peak locations
+   derivative = sorted_data[deriv_col].values
+   min_height = 0.1 * np.max(derivative)  # 10% of max derivative as threshold
+   peaks, properties = find_peaks(derivative, height=min_height)
+   
+   # Create the plot
+   fig, ax = plt.subplots(figsize=(12, 8))  # Increased figure height
+   
+   # Plot derivative with some transparency
+   ax.plot(sorted_data[volume_col], derivative, 'b-', alpha=0.7, label='First Derivative')
+   
+   # Mark peaks with transparency
+   inflection_volumes = sorted_data[volume_col].iloc[peaks]
+   inflection_derivatives = derivative[peaks]
+   ax.scatter(inflection_volumes, inflection_derivatives, 
+             color='red', marker='o', s=100, alpha=0.6, label='Inflection Points',
+             edgecolor='darkred', linewidth=1)  # Added edge color for better visibility
+   
+   # Add threshold line
+   ax.axhline(y=min_height, color='r', linestyle='--', 
+              alpha=0.5, label='Peak Threshold')
+   
+   # Get the y-axis limits for calculating annotation positions
+   ymin, ymax = ax.get_ylim()
+   y_range = ymax - ymin
+   
+   # Create alternating offsets for annotations with increased spacing
+   for i, (x, y) in enumerate(zip(inflection_volumes, inflection_derivatives)):
+       # Alternate between top and bottom placement with larger offsets
+       if i % 2 == 0:
+           y_offset = 40  # Increased upward offset
+           va = 'bottom'
+       else:
+           y_offset = -40  # Increased downward offset
+           va = 'top'
+       
+       # Add horizontal offset alternating left and right
+       x_offset = 20 if i % 4 >= 2 else -20
+       
+       ax.annotate(
+           f'V={x:.2f}', 
+           xy=(x, y),
+           xytext=(x_offset, y_offset),
+           textcoords='offset points',
+           ha='center' if x_offset == 0 else ('right' if x_offset < 0 else 'left'),
+           va=va,
+           fontsize=8,
+           bbox=dict(facecolor='white', edgecolor='none', alpha=0.7),
+           arrowprops=dict(arrowstyle='->', connectionstyle='arc3,rad=0.2', alpha=0.6)  # Added alpha to arrows
+       )
+   
+   plt.title(f'First Derivative and Inflection Points for {batch_col}: {batch}\n(Number of Peaks: {num_peaks})')
+   plt.xlabel('Volume')
+   plt.ylabel('First Derivative')
+   plt.grid(True, alpha=0.3)
+   plt.legend()
+   
+   # Adjust plot limits to accommodate annotations with more padding
+   current_ymin, current_ymax = ax.get_ylim()
+   ax.set_ylim(current_ymin - 0.2 * y_range, current_ymax + 0.2 * y_range)  # Increased padding
+   
+   plt.tight_layout()
+   plt.show()
