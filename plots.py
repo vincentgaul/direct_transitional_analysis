@@ -2,7 +2,7 @@ import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 import numpy as np
-from metrics import calculate_direct_af, calculate_transwidth, calculate_inflection_points
+from metrics import calculate_direct_af, calculate_transwidth, calculate_inflection_points, calculate_max_rate_of_change
 from scipy.signal import find_peaks
 
 
@@ -56,13 +56,13 @@ def plot_processed_dataframe(df, batch_col, raw_signal_col, smoothed_signal_col,
 
 def create_control_charts(metrics_df, control_limits_df):
     """
-    Create control charts for Direct AF, Transwidth, and Inflection Points metrics.
+    Create control charts for Direct AF, Transwidth, Inflection Points, and (dC/dV)max metrics.
 
     Parameters
     ----------
     metrics_df : pandas DataFrame
         DataFrame containing metrics data with 'Batch', 'Direct AF', 'Transwidth', 
-        and 'Inflection Points' columns.
+        'Inflection Points', and '(dC/dV)max' columns.
     control_limits_df : pandas DataFrame
         DataFrame containing control limits with 'Metric', 'Mean', 'LCL', 'UCL' columns.
 
@@ -72,7 +72,7 @@ def create_control_charts(metrics_df, control_limits_df):
         Displays the control charts.
     """
     # Ensure the required columns are present in both dataframes
-    required_cols_metrics = ['Batch', 'Direct AF', 'Transwidth', 'Inflection Points']
+    required_cols_metrics = ['Batch', 'Direct AF', 'Transwidth', 'Inflection Points', 'Max Rate of Change']
     required_cols_limits = ['Metric', 'Mean', 'LCL', 'UCL']
     
     if not all(col in metrics_df.columns for col in required_cols_metrics):
@@ -81,10 +81,10 @@ def create_control_charts(metrics_df, control_limits_df):
         raise ValueError(f"control_limits_df is missing one or more required columns: {required_cols_limits}")
 
     # Create a control chart for each metric
-    metrics = ['Direct AF', 'Transwidth', 'Inflection Points']
+    metrics = ['Direct AF', 'Transwidth', 'Inflection Points', 'Max Rate of Change']
     
-    # Set up the figure layout for all three plots
-    fig, axs = plt.subplots(3, 1, figsize=(12, 18))
+    # Set up the figure layout for all four plots
+    fig, axs = plt.subplots(4, 1, figsize=(12, 24))
     
     for idx, (metric, ax) in enumerate(zip(metrics, axs)):
         # Get the control limits for the current metric
@@ -140,12 +140,6 @@ def create_control_charts(metrics_df, control_limits_df):
     
     # Show all plots
     plt.show()
-
-
-import pandas as pd
-import numpy as np
-import seaborn as sns
-import matplotlib.pyplot as plt
 
 def plot_transwidth(df, volume_col, signal_col, batch_col, batch):
     """
@@ -408,3 +402,259 @@ def plot_inflection_points(df, volume_col, deriv_col, batch_col, batch):
    
    plt.tight_layout()
    plt.show()
+   
+   
+   
+   
+def plot_max_rate_of_change(df, volume_col, deriv_col, batch_col, batch, window_size=10):
+    """
+    Plot the steepest slope (maximum rate of change) calculation for a single batch,
+    showing both the original and smoothed derivative with the maximum slope point marked.
+
+    Parameters
+    ----------
+    df : pandas DataFrame
+        DataFrame containing the volume, derivative, and batch data.
+    volume_col : str
+        Column name for volume data (x-axis).
+    deriv_col : str
+        Column name for derivative data (y-axis).
+    batch_col : str
+        Column name for batch data.
+    batch : str or int
+        The specific batch to plot.
+    window_size : int, optional
+        Size of the moving average window (default: 10)
+
+    Returns
+    -------
+    None
+        Displays the plot using matplotlib.
+    """
+    # Filter the dataframe for the specified batch
+    batch_data = df[df[batch_col] == batch]
+
+    if batch_data.empty:
+        raise ValueError(f"No data found for batch '{batch}' in column '{batch_col}'")
+
+    # Sort the data by volume for plotting
+    sorted_data = batch_data.sort_values(volume_col)
+    original_derivative = sorted_data[deriv_col].values
+    
+    # Calculate smoothed derivative
+    smoothed_derivative = pd.Series(original_derivative).rolling(
+        window=window_size, center=True).mean()
+    # Handle NaN values at edges
+    smoothed_derivative = smoothed_derivative.fillna(method='bfill').fillna(method='ffill')
+    smoothed_derivative = smoothed_derivative.values
+    
+    # Calculate second derivative
+    second_derivative = np.gradient(smoothed_derivative, sorted_data[volume_col].values)
+    
+    # Find point of maximum slope
+    max_slope_idx = np.argmax(np.abs(second_derivative))
+    max_volume = sorted_data[volume_col].iloc[max_slope_idx]
+    max_derivative = smoothed_derivative[max_slope_idx]
+    slope = second_derivative[max_slope_idx]
+    
+    # Create the plot
+    fig, ax = plt.subplots(figsize=(12, 8))
+    
+    # Plot original derivative with low opacity
+    ax.plot(sorted_data[volume_col], original_derivative, 'b-', 
+            alpha=0.3, label='Original Derivative')
+            
+    # Plot smoothed derivative
+    ax.plot(sorted_data[volume_col], smoothed_derivative, 'b-', 
+            alpha=0.7, label='Smoothed Derivative')
+    
+    # Mark maximum slope point with transparency
+    ax.scatter(max_volume, max_derivative, 
+              color='red', marker='o', s=100, alpha=0.6, 
+              label='Maximum Rate Point', edgecolor='darkred', linewidth=1)
+    
+    # Add slope line
+    line_length = (sorted_data[volume_col].max() - sorted_data[volume_col].min()) * 0.2
+    x_range = line_length
+    y_range = slope * x_range
+    x_left = max_volume - x_range/2
+    x_right = max_volume + x_range/2
+    y_left = max_derivative - y_range/2
+    y_right = max_derivative + y_range/2
+    
+    # Plot slope line
+    ax.plot([x_left, x_right], [y_left, y_right], 'r--', 
+            linewidth=2, alpha=0.6, label='Maximum Rate')
+    
+    # Get the y-axis limits for calculating annotation positions
+    ymin, ymax = ax.get_ylim()
+    y_range = ymax - ymin
+    
+    # Add annotation for maximum rate point
+    ax.annotate(
+        f'Max Rate Point\nV={max_volume:.2f}\nRate={slope:.2f}', 
+        xy=(max_volume, max_derivative),
+        xytext=(30, 30),
+        textcoords='offset points',
+        ha='left',
+        va='bottom',
+        fontsize=8,
+        bbox=dict(facecolor='white', edgecolor='none', alpha=0.7),
+        arrowprops=dict(arrowstyle='->', 
+                       connectionstyle='arc3,rad=0.2', 
+                       alpha=0.6)
+    )
+    
+    plt.title(f'First Derivative and Maximum Rate of Change for {batch_col}: {batch}\n' + 
+              f'(Max Rate: {slope:.2f}, Window Size: {window_size})')
+    plt.xlabel('Volume')
+    plt.ylabel('First Derivative')
+    plt.grid(True, alpha=0.3)
+    plt.legend(loc='best')
+    
+    # Adjust plot limits to accommodate annotations
+    current_ymin, current_ymax = ax.get_ylim()
+    ax.set_ylim(current_ymin - 0.2 * y_range, 
+                current_ymax + 0.2 * y_range)
+    
+    plt.tight_layout()
+    plt.show()
+    """
+    Plot the steepest slope (maximum rate of change) calculation for a single batch,
+    showing both the original and smoothed derivative with the maximum slope point marked.
+
+    Parameters
+    ----------
+    df : pandas DataFrame
+        DataFrame containing the volume, derivative, and batch data.
+    volume_col : str
+        Column name for volume data (x-axis).
+    deriv_col : str
+        Column name for derivative data (y-axis).
+    batch_col : str
+        Column name for batch data.
+    batch : str or int
+        The specific batch to plot.
+    window_size : int, optional
+        Size of the moving average window (default: 10)
+
+    Returns
+    -------
+    None
+        Displays the plot using matplotlib.
+    """
+    # Filter the dataframe for the specified batch
+    batch_data = df[df[batch_col] == batch]
+
+    if batch_data.empty:
+        raise ValueError(f"No data found for batch '{batch}' in column '{batch_col}'")
+
+    # Sort the data by volume for plotting
+    sorted_data = batch_data.sort_values(volume_col)
+    original_derivative = sorted_data[deriv_col].values
+    
+    # Calculate smoothed derivative
+    smoothed_derivative = pd.Series(original_derivative).rolling(
+        window=window_size, center=True).mean()
+    # Handle NaN values at edges
+    smoothed_derivative = smoothed_derivative.fillna(method='bfill').fillna(method='ffill')
+    smoothed_derivative = smoothed_derivative.values
+    
+    # Calculate second derivative
+    second_derivative = np.gradient(smoothed_derivative, sorted_data[volume_col].values)
+    
+    # Calculate thresholds using smoothed derivative
+    max_deriv = np.max(smoothed_derivative)
+    lower_threshold = 0.2 * max_deriv
+    upper_threshold = 0.8 * max_deriv
+    
+    # Filter derivative values within thresholds
+    valid_mask = (smoothed_derivative >= lower_threshold) & (smoothed_derivative <= upper_threshold)
+    valid_second_deriv = second_derivative[valid_mask]
+    
+    if len(valid_second_deriv) == 0:
+        raise ValueError("No valid derivative values found within threshold range")
+    
+    # Find point of maximum slope within valid region
+    max_slope_idx = np.argmax(np.abs(valid_second_deriv))
+    max_index = np.where(valid_mask)[0][max_slope_idx]
+    max_volume = sorted_data[volume_col].iloc[max_index]
+    max_derivative = smoothed_derivative[max_index]
+    slope = second_derivative[max_index]
+    
+    # Create the plot
+    fig, ax = plt.subplots(figsize=(12, 8))
+    
+    # Plot original derivative with low opacity
+    ax.plot(sorted_data[volume_col], original_derivative, 'b-', 
+            alpha=0.3, label='Original Derivative')
+            
+    # Plot smoothed derivative
+    ax.plot(sorted_data[volume_col], smoothed_derivative, 'b-', 
+            alpha=0.7, label='Smoothed Derivative')
+    
+    # Add threshold lines
+    ax.axhline(y=lower_threshold, color='g', linestyle='--', 
+               alpha=0.5, label='20% Threshold')
+    ax.axhline(y=upper_threshold, color='g', linestyle='--', 
+               alpha=0.5, label='80% Threshold')
+    
+    # Mark maximum slope point with transparency
+    ax.scatter(max_volume, max_derivative, 
+              color='red', marker='o', s=100, alpha=0.6, 
+              label='Maximum Slope Point', edgecolor='darkred', linewidth=1)
+    
+    # Add slope line
+    line_length = (sorted_data[volume_col].max() - sorted_data[volume_col].min()) * 0.2
+    x_range = line_length
+    y_range = slope * x_range
+    x_left = max_volume - x_range/2
+    x_right = max_volume + x_range/2
+    y_left = max_derivative - y_range/2
+    y_right = max_derivative + y_range/2
+    
+    # Plot slope line
+    ax.plot([x_left, x_right], [y_left, y_right], 'r--', 
+            linewidth=2, alpha=0.6, label='Maximum Slope')
+    
+    # Get the y-axis limits for calculating annotation positions
+    ymin, ymax = ax.get_ylim()
+    y_range = ymax - ymin
+    
+    # Add annotation for maximum slope point
+    ax.annotate(
+        f'Max Slope Point\nV={max_volume:.2f}\nSlope={slope:.2f}', 
+        xy=(max_volume, max_derivative),
+        xytext=(30, 30),
+        textcoords='offset points',
+        ha='left',
+        va='bottom',
+        fontsize=8,
+        bbox=dict(facecolor='white', edgecolor='none', alpha=0.7),
+        arrowprops=dict(arrowstyle='->', 
+                       connectionstyle='arc3,rad=0.2', 
+                       alpha=0.6)
+    )
+    
+    # Add vertical lines for valid region
+    valid_volumes = sorted_data[volume_col][valid_mask]
+    if len(valid_volumes) > 0:
+        min_valid_volume = valid_volumes.min()
+        max_valid_volume = valid_volumes.max()
+        ax.axvline(x=min_valid_volume, color='g', linestyle=':', alpha=0.3)
+        ax.axvline(x=max_valid_volume, color='g', linestyle=':', alpha=0.3)
+    
+    plt.title(f'First Derivative and Maximum Slope for {batch_col}: {batch}\n' + 
+              f'(Max Slope: {slope:.2f}, Window Size: {window_size})')
+    plt.xlabel('Volume')
+    plt.ylabel('First Derivative')
+    plt.grid(True, alpha=0.3)
+    plt.legend(loc='best')
+    
+    # Adjust plot limits to accommodate annotations
+    current_ymin, current_ymax = ax.get_ylim()
+    ax.set_ylim(current_ymin - 0.2 * y_range, 
+                current_ymax + 0.2 * y_range)
+    
+    plt.tight_layout()
+    plt.show()

@@ -213,13 +213,91 @@ def calculate_inflection_points(df, volume_col, deriv_col, batch_col=None):
         return {'num_inflection_points': num_peaks}
 
 
+def calculate_max_rate_of_change(df, volume_col='v', deriv_col='first_derivative', batch_col=None, window_size=10):
+    """
+    Calculate the steepest slope (maximum rate of change) by finding the maximum of the
+    second derivative.
 
+    Parameters
+    ----------
+    df : pandas DataFrame
+        DataFrame containing the volume and derivative data.
+    volume_col : str, optional
+        Column name for volume data (default: 'v')
+    deriv_col : str, optional
+        Column name for derivative data (default: 'first_derivative')
+    batch_col : str, optional
+        Column name for batch data. If None, calculates for the entire dataset.
+    window_size : int, optional
+        Size of the moving average window (default: 10)
 
+    Returns
+    -------
+    results : pandas DataFrame or dict
+        If batch_col provided: DataFrame with batch identifiers and maximum slope values
+        If no batch_col: Dictionary with single maximum slope value
+    """
+    def compute_max_rate(volume, derivative):
+        """
+        Compute the maximum slope after applying moving average smoothing.
 
+        Parameters
+        ----------
+        volume : numpy array
+            Array of volume values
+        derivative : numpy array
+            Array of derivative values
 
+        Returns
+        -------
+        float
+            Maximum slope value
+        float
+            Volume at maximum slope
+        """
+        # Apply moving average to first derivative
+        smoothed_derivative = pd.Series(derivative).rolling(window=window_size, center=True).mean()
+        smoothed_derivative = smoothed_derivative.fillna(method='bfill').fillna(method='ffill')
+        
+        # Calculate the second derivative (rate of change of the first derivative)
+        second_derivative = np.gradient(smoothed_derivative, volume)
+        
+        # Find point of maximum slope
+        max_slope_idx = np.argmax(np.abs(second_derivative))
+        
+        return (derivative[max_slope_idx], volume[max_slope_idx])
 
-
-
+    if batch_col:
+        # Get unique batches in their original order
+        unique_batches = df[batch_col].unique()
+        
+        # Calculate max rate for each batch
+        results = []
+        for batch in unique_batches:
+            batch_data = df[df[batch_col] == batch].sort_values(volume_col)
+            max_rate, max_vol = compute_max_rate(
+                batch_data[volume_col].values,
+                batch_data[deriv_col].values
+            )
+            results.append({
+                'batch': batch,
+                'Max Rate': max_rate,
+                'Volume at Max Rate': max_vol
+            })
+        
+        # Create DataFrame with results in original batch order
+        return pd.DataFrame(results)
+    else:
+        # Apply the calculation on the entire dataset
+        sorted_data = df.sort_values(volume_col)
+        max_rate, max_vol = compute_max_rate(
+            sorted_data[volume_col].values,
+            sorted_data[deriv_col].values
+        )
+        return {
+            'Max Rate': max_rate,
+            'Volume at Max Rate': max_vol
+        }
 
 
 def calculate_metrics(df, volume_col, signal_col, deriv_col, batch_col=None):
@@ -253,13 +331,17 @@ def calculate_metrics(df, volume_col, signal_col, deriv_col, batch_col=None):
     # Calculate Inflection Points
     inflection_points = calculate_inflection_points(df, volume_col, deriv_col, batch_col)
 
+    # Calculate Max Rate of Change
+    max_rate = calculate_max_rate_of_change(df, volume_col=volume_col, deriv_col=deriv_col, batch_col=batch_col)
+
     # Combine results into a DataFrame
     if batch_col:
         result_df = pd.DataFrame({
             batch_col: direct_af_values.index,
             'Direct AF': direct_af_values.values,
             'Transwidth': transwidth_values.values,
-            'Inflection Points': inflection_points['num_inflection_points'].values
+            'Inflection Points': inflection_points['num_inflection_points'].values,
+            'Max Rate of Change': max_rate['Max Rate'].values
         })
     else:
         # If no batch, just create a DataFrame with a single row
@@ -267,7 +349,8 @@ def calculate_metrics(df, volume_col, signal_col, deriv_col, batch_col=None):
             'Batch': ['All Data'],
             'Direct AF': [direct_af_values],
             'Transwidth': [transwidth_values],
-            'Inflection Points': [inflection_points['num_inflection_points']]
+            'Inflection Points': [inflection_points['num_inflection_points']],
+            'Max Rate of Change': [max_rate['Max Rate']]
         })
 
     # Sort the DataFrame by the Batch column if batch_col is provided
@@ -277,6 +360,8 @@ def calculate_metrics(df, volume_col, signal_col, deriv_col, batch_col=None):
     return result_df
 
 
+
+
 def calculate_control_limits(df):
     """
     Calculate control limits (mean ± 3 standard deviations) for each metric.
@@ -284,7 +369,8 @@ def calculate_control_limits(df):
     Parameters
     ----------
     df : pandas DataFrame
-        DataFrame containing 'Direct AF', 'Transwidth', and 'Inflection Points' columns.
+        DataFrame containing 'Direct AF', 'Transwidth', 'Inflection Points', 
+        and '(dC/dV)max' columns.
 
     Returns
     -------
@@ -295,16 +381,19 @@ def calculate_control_limits(df):
     df['Direct AF'] = df['Direct AF'].astype(float)
     df['Transwidth'] = df['Transwidth'].astype(float)
     df['Inflection Points'] = df['Inflection Points'].astype(float)
+    df['Max Rate of Change'] = df['Max Rate of Change'].astype(float)
     
     # Calculate means for each metric
     direct_af_mean = df['Direct AF'].mean()
     transwidth_mean = df['Transwidth'].mean()
     inflection_mean = df['Inflection Points'].mean()
+    max_rate_mean = df['Max Rate of Change'].mean()
     
     # Calculate standard deviations for each metric
     direct_af_std = df['Direct AF'].std()
     transwidth_std = df['Transwidth'].std()
     inflection_std = df['Inflection Points'].std()
+    max_rate_std = df['Max Rate of Change'].std()
     
     # Calculate control limits (mean ± 3 * standard deviation)
     direct_af_lcl = direct_af_mean - 3 * direct_af_std
@@ -313,14 +402,15 @@ def calculate_control_limits(df):
     transwidth_ucl = transwidth_mean + 3 * transwidth_std
     inflection_lcl = inflection_mean - 3 * inflection_std
     inflection_ucl = inflection_mean + 3 * inflection_std
+    max_rate_lcl = max_rate_mean - 3 * max_rate_std
+    max_rate_ucl = max_rate_mean + 3 * max_rate_std
     
     # Create a DataFrame with the results
     results_df = pd.DataFrame({
-        'Metric': ['Direct AF', 'Transwidth', 'Inflection Points'],
-        'Mean': [direct_af_mean, transwidth_mean, inflection_mean],
-        'LCL': [direct_af_lcl, transwidth_lcl, inflection_lcl],
-        'UCL': [direct_af_ucl, transwidth_ucl, inflection_ucl]
+        'Metric': ['Direct AF', 'Transwidth', 'Inflection Points', 'Max Rate of Change'],
+        'Mean': [direct_af_mean, transwidth_mean, inflection_mean, max_rate_mean],
+        'LCL': [direct_af_lcl, transwidth_lcl, inflection_lcl, max_rate_lcl],
+        'UCL': [direct_af_ucl, transwidth_ucl, inflection_ucl, max_rate_ucl]
     })
     
     return results_df
-
