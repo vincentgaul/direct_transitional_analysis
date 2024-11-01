@@ -1,6 +1,3 @@
-
-
-import pandas as pd
 import numpy as np
 from scipy.signal import savgol_filter
 
@@ -8,10 +5,11 @@ def process_dataframe(df, batch_col, signal_col,
                       window_length=100, polyorder=1, num_smoothing_passes=1,
                       smoothed_col_name='smoothed_signal', 
                       normalized_col_name='normalized_signal',
-                      derivative_col_name='first_derivative'):
+                      derivative_col_name='first_derivative',
+                      normalized_derivative_col_name='normalized_first_derivative'):
     """
     Process a pandas DataFrame by grouping by batch, applying smoothing multiple times,
-    normalizing the smoothed signal, and calculating the first derivative, with custom column names.
+    normalizing the smoothed signal, calculating the first derivative, and normalizing the derivative.
     
     Args:
     df (pd.DataFrame): Input DataFrame
@@ -23,9 +21,10 @@ def process_dataframe(df, batch_col, signal_col,
     smoothed_col_name (str): Name for the new column containing smoothed data. Default is 'smoothed_signal'.
     normalized_col_name (str): Name for the new column containing normalized data. Default is 'normalized_signal'.
     derivative_col_name (str): Name for the new column containing derivative data. Default is 'first_derivative'.
+    normalized_derivative_col_name (str): Name for the new column containing normalized derivative data. Default is 'normalized_first_derivative'.
     
     Returns:
-    pd.DataFrame: Processed DataFrame with new columns for smoothed, normalized, and derivative data
+    pd.DataFrame: Processed DataFrame with new columns for smoothed, normalized, derivative, and normalized derivative data
     """
     
     def smooth_normalize_and_derive(group):
@@ -42,7 +41,13 @@ def process_dataframe(df, batch_col, signal_col,
         group[normalized_col_name] = (smoothed_signal - min_val) / (max_val - min_val)
         
         # Calculate first derivative of the normalized signal
-        group[derivative_col_name] = np.gradient(group[normalized_col_name])
+        first_derivative = np.gradient(group[normalized_col_name])
+        group[derivative_col_name] = first_derivative
+        
+        # Normalize the first derivative
+        min_derivative = np.min(first_derivative)
+        max_derivative = np.max(first_derivative)
+        group[normalized_derivative_col_name] = (first_derivative - min_derivative) / (max_derivative - min_derivative)
         
         return group
     
@@ -50,4 +55,3 @@ def process_dataframe(df, batch_col, signal_col,
     processed_df = df.groupby(batch_col, group_keys=False).apply(smooth_normalize_and_derive)
     
     return processed_df
-
