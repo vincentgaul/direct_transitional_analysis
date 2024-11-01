@@ -6,44 +6,107 @@ from metrics import calculate_direct_af, calculate_transwidth, calculate_inflect
 from scipy.signal import find_peaks
 
 
-
-def plot_processed_dataframe(df, batch_col, raw_signal_col, smoothed_signal_col, derivative_col, example_batch):
+def plot_processed_dataframe(
+    df, 
+    
+    volume_col, 
+    raw_signal_col, 
+    processed_signal_col, 
+    derivative_col, 
+    batch_col,
+    example_batch
+):
     """
-    Create a side-by-side plot of the raw and smoothed signals, and the first derivative for a specified batch.
+    Create a side-by-side plot of the raw and smoothed signals (with dual y-axes), 
+    and the first derivative for a specified batch, using 'volume_col' as the x-axis.
     """
+    import matplotlib.pyplot as plt
+    import seaborn as sns
+    
     # Filter the dataframe for the specified batch
     batch_data = df[df[batch_col] == example_batch].copy()
-    batch_data = batch_data.sort_index()
+    batch_data = batch_data.sort_values(by=volume_col)
     
     # Create a figure with two subplots side by side
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 8))
     
-    # Set the figure background color to white
-    fig.patch.set_facecolor('white')  # Add this line
-    # Set the subplot background colors to white
-    ax1.set_facecolor('white')  # Add this line
-    ax2.set_facecolor('white')  # Add this line
+    # Set the figure and subplot background colors to white
+    fig.patch.set_facecolor('white')
+    ax1.set_facecolor('white')
+    ax2.set_facecolor('white')
     
-    # Plot raw and smoothed signals on the left subplot
-    sns.lineplot(data=batch_data, x=batch_data.index, y=raw_signal_col, ax=ax1, label='Raw Signal')
-    sns.lineplot(data=batch_data, x=batch_data.index, y=smoothed_signal_col, ax=ax1, label='Smoothed Signal')
-    ax1.set_title(f'Raw and Smoothed Signals for Batch {example_batch}')
-    ax1.set_xlabel('Index')
-    ax1.set_ylabel('Signal Value')
-    ax1.legend()
+    # Create a twin y-axis on the left subplot
+    ax1_right = ax1.twinx()
+    
+    # Plot raw signal on ax1
+    sns.lineplot(
+        data=batch_data, 
+        x=volume_col, 
+        y=raw_signal_col, 
+        ax=ax1, 
+        label=raw_signal_col, 
+        color='tab:blue'
+    )
+    
+    # Plot smoothed signal on ax1_right
+    sns.lineplot(
+        data=batch_data, 
+        x=volume_col, 
+        y=processed_signal_col, 
+        ax=ax1_right, 
+        label=processed_signal_col, 
+        color='tab:orange'
+    )
+    
+    # Remove the legend from ax1_right
+    if ax1_right.legend_:
+        ax1_right.legend_.remove()
+    
+    # Set titles and labels using the exact argument names
+    ax1.set_title(f'{raw_signal_col} and {processed_signal_col} vs {volume_col} for {batch_col} {example_batch}')
+    ax1.set_xlabel(volume_col)
+    ax1.set_ylabel(raw_signal_col, color='tab:blue')
+    ax1_right.set_ylabel(processed_signal_col, color='tab:orange')
+    
+    # Adjust tick parameters for color consistency
+    ax1.tick_params(axis='y', labelcolor='tab:blue')
+    ax1_right.tick_params(axis='y', labelcolor='tab:orange')
+    
+    # Combine legends from both axes
+    lines_1, labels_1 = ax1.get_legend_handles_labels()
+    lines_2, labels_2 = ax1_right.get_legend_handles_labels()
+    ax1.legend(lines_1 + lines_2, labels_1 + labels_2, loc='upper left')
     
     # Plot first derivative on the right subplot
-    sns.lineplot(data=batch_data, x=batch_data.index, y=derivative_col, ax=ax2)
-    ax2.set_title(f'First Derivative for Batch {example_batch}')
-    ax2.set_xlabel('Index')
-    ax2.set_ylabel('Derivative Value')
+    sns.lineplot(
+        data=batch_data, 
+        x=volume_col, 
+        y=derivative_col, 
+        ax=ax2,
+        label=derivative_col,
+        color='tab:green'
+    )
+    ax2.set_title(f'{derivative_col} vs {volume_col} for {batch_col} {example_batch}')
+    ax2.set_xlabel(volume_col)
+    ax2.set_ylabel(derivative_col)
+    
+    # Add legend to ax2
+    ax2.legend()
     
     plt.tight_layout()
     plt.close()
     return fig
 
 # Example usage:
-# fig = plot_signal_and_derivative(processed_df, 'batch_column', 'original_signal', 'smoothed_signal', 'first_derivative', 'Batch1')
+# fig = plot_processed_dataframe(
+#     df=processed_df, 
+#     batch_col='batch_column', 
+#     volume_col='volume', 
+#     raw_signal_col='original_signal', 
+#     processed_signal_col='smoothed_signal', 
+#     derivative_col='first_derivative', 
+#     example_batch='Batch1'
+# )
 # plt.show()
 
 
