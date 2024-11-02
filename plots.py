@@ -119,14 +119,12 @@ def plot_processed_dataframe(
 
 def create_control_charts(metrics_df, control_limits_df):
     """
-    Create control charts for Direct AF, Transwidth, Inflection Points, Max Rate of Change, 
-    and Max Slope metrics.
+    Create control charts for all metrics in the DataFrame except 'Batch'.
 
     Parameters
     ----------
     metrics_df : pandas DataFrame
-        DataFrame containing metrics data with 'Batch', 'Direct AF', 'Transwidth', 
-        'Inflection Points', 'Max Rate of Change', and 'Max Slope' columns.
+        DataFrame containing metrics data with 'Batch' and metric columns.
     control_limits_df : pandas DataFrame
         DataFrame containing control limits with 'Metric', 'Mean', 'LCL', 'UCL' columns.
 
@@ -135,22 +133,24 @@ def create_control_charts(metrics_df, control_limits_df):
     None
         Displays the control charts.
     """
-    # Update required columns list to include Max Slope
-    required_cols_metrics = ['Batch', 'Direct AF', 'Transwidth', 'Inflection Points', 
-                           'Max Rate of Change', 'Max Slope']
-    required_cols_limits = ['Metric', 'Mean', 'LCL', 'UCL']
+    # Get all metrics (excluding Batch)
+    metrics = [col for col in metrics_df.columns if col != 'Batch']
     
     # Verify required columns
-    if not all(col in metrics_df.columns for col in required_cols_metrics):
-        raise ValueError(f"metrics_df is missing one or more required columns: {required_cols_metrics}")
+    required_cols_limits = ['Metric', 'Mean', 'LCL', 'UCL']
+    if 'Batch' not in metrics_df.columns:
+        raise ValueError("metrics_df must contain a 'Batch' column")
     if not all(col in control_limits_df.columns for col in required_cols_limits):
         raise ValueError(f"control_limits_df is missing one or more required columns: {required_cols_limits}")
 
-    # Update metrics list to include Max Slope
-    metrics = ['Direct AF', 'Transwidth', 'Inflection Points', 'Max Rate of Change', 'Max Slope']
+    # Calculate number of plots needed and figure size
+    n_metrics = len(metrics)
+    fig_height = 6 * n_metrics  # Adjust height based on number of metrics
+    fig, axs = plt.subplots(n_metrics, 1, figsize=(12, fig_height))
     
-    # Adjust figure size for five plots instead of four
-    fig, axs = plt.subplots(5, 1, figsize=(12, 30))  # Increased height to accommodate new plot
+    # Handle case where there's only one metric
+    if n_metrics == 1:
+        axs = [axs]
     
     for idx, (metric, ax) in enumerate(zip(metrics, axs)):
         # Get the control limits for the current metric

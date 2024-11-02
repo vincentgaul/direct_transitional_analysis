@@ -445,62 +445,35 @@ def calculate_metrics(df, volume_col, signal_col, deriv_col, batch_col=None):
 
 def calculate_control_limits(df):
     """
-    Calculate control limits (mean ± 3 standard deviations) for each metric.
+    Calculate control limits (mean ± 3 standard deviations) for all numeric columns 
+    except 'Batch'.
 
     Parameters
     ----------
     df : pandas DataFrame
-        DataFrame containing 'Direct AF', 'Transwidth', 'Inflection Points', 
-        'Max Rate of Change', and 'Max Slope' columns.
+        DataFrame containing numeric metric columns and optionally a 'Batch' column
 
     Returns
     -------
     pandas DataFrame
         A DataFrame containing mean and control limits for each metric.
     """
-    # Convert numeric columns to float
-    df['Direct AF'] = df['Direct AF'].astype(float)
-    df['Transwidth'] = df['Transwidth'].astype(float)
-    df['Inflection Points'] = df['Inflection Points'].astype(float)
-    df['Max Rate of Change'] = df['Max Rate of Change'].astype(float)
-    df['Max Slope'] = df['Max Slope'].astype(float)  # Added Max Slope conversion
+    # Get all columns except 'Batch'
+    metrics = [col for col in df.columns if col != 'Batch']
     
-    # Calculate means for each metric
-    direct_af_mean = df['Direct AF'].mean()
-    transwidth_mean = df['Transwidth'].mean()
-    inflection_mean = df['Inflection Points'].mean()
-    max_rate_mean = df['Max Rate of Change'].mean()
-    max_slope_mean = df['Max Slope'].mean()  # Added Max Slope mean
+    # Convert all metric columns to float
+    df_numeric = df[metrics].astype(float)
     
-    # Calculate standard deviations for each metric
-    direct_af_std = df['Direct AF'].std()
-    transwidth_std = df['Transwidth'].std()
-    inflection_std = df['Inflection Points'].std()
-    max_rate_std = df['Max Rate of Change'].std()
-    max_slope_std = df['Max Slope'].std()  # Added Max Slope std
+    # Calculate statistics for all metrics at once
+    means = df_numeric.mean()
+    stds = df_numeric.std()
     
-    # Calculate control limits (mean ± 3 * standard deviation)
-    direct_af_lcl = direct_af_mean - 3 * direct_af_std
-    direct_af_ucl = direct_af_mean + 3 * direct_af_std
-    transwidth_lcl = transwidth_mean - 3 * transwidth_std
-    transwidth_ucl = transwidth_mean + 3 * transwidth_std
-    inflection_lcl = inflection_mean - 3 * inflection_std
-    inflection_ucl = inflection_mean + 3 * inflection_std
-    max_rate_lcl = max_rate_mean - 3 * max_rate_std
-    max_rate_ucl = max_rate_mean + 3 * max_rate_std
-    max_slope_lcl = max_slope_mean - 3 * max_slope_std  # Added Max Slope LCL
-    max_slope_ucl = max_slope_mean + 3 * max_slope_std  # Added Max Slope UCL
-    
-    # Create a DataFrame with the results
+    # Create results DataFrame with reset_index() to keep Metric as a column
     results_df = pd.DataFrame({
-        'Metric': ['Direct AF', 'Transwidth', 'Inflection Points', 
-                  'Max Rate of Change', 'Max Slope'],  # Added Max Slope to metrics
-        'Mean': [direct_af_mean, transwidth_mean, inflection_mean, 
-                max_rate_mean, max_slope_mean],  # Added Max Slope mean
-        'LCL': [direct_af_lcl, transwidth_lcl, inflection_lcl, 
-                max_rate_lcl, max_slope_lcl],  # Added Max Slope LCL
-        'UCL': [direct_af_ucl, transwidth_ucl, inflection_ucl, 
-                max_rate_ucl, max_slope_ucl]  # Added Max Slope UCL
+        'Metric': metrics,
+        'Mean': means.values,  # Use .values to match the metrics list length
+        'LCL': (means - 3 * stds).values,
+        'UCL': (means + 3 * stds).values
     })
     
     return results_df
