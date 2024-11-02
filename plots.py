@@ -93,9 +93,15 @@ def plot_processed_dataframe(
     # Add legend to ax2
     ax2.legend()
     
+    
+
+    ax1.grid(True, alpha=0.3)
+    ax2.grid(True, alpha=0.3)
+    
     plt.tight_layout()
     plt.close()
     return fig
+
 
 # Example usage:
 # fig = plot_processed_dataframe(
@@ -153,6 +159,8 @@ def create_control_charts(metrics_df, control_limits_df):
         
         # Create the plot
         sns.lineplot(data=metrics_df, x='Batch', y=metric, marker='o', ax=ax)
+        
+        ax.grid(True, alpha=0.3)
         
         # Add control limits
         ax.axhline(y=mean, color='g', linestyle='--', label='Mean')
@@ -262,6 +270,9 @@ def plot_transwidth(df, volume_col, signal_col, batch_col, batch):
     plt.xlabel('Volume')
     plt.ylabel('Signal')
 
+    # Add grid with consistent style
+    plt.grid(True, alpha=0.3)
+    
     plt.tight_layout()
     plt.show()
 
@@ -350,6 +361,9 @@ def plot_direct_af(df, volume_col, signal_col, batch_col, batch):
     plt.ylabel('Signal')
     plt.legend()
 
+    # Add grid with consistent style
+    plt.grid(True, alpha=0.3)
+    
     plt.tight_layout()
     plt.show()
 
@@ -460,6 +474,10 @@ def plot_inflection_points(df, volume_col, deriv_col, batch_col, batch):
    current_ymin, current_ymax = ax.get_ylim()
    ax.set_ylim(current_ymin - 0.2 * y_range, current_ymax + 0.2 * y_range)  # Increased padding
    
+   
+   # Add grid with consistent style
+   plt.grid(True, alpha=0.3)
+    
    plt.tight_layout()
    plt.show()
    
@@ -678,6 +696,9 @@ def plot_max_slope(df, volume_col, signal_col, batch_col, batch):
     plt.ylabel('Signal')
     plt.legend()
 
+    # Add grid with consistent style
+    plt.grid(True, alpha=0.3)
+    
     plt.tight_layout()
     plt.show()
 
