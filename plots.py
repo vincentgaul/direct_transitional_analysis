@@ -113,13 +113,14 @@ def plot_processed_dataframe(
 
 def create_control_charts(metrics_df, control_limits_df):
     """
-    Create control charts for Direct AF, Transwidth, Inflection Points, and (dC/dV)max metrics.
+    Create control charts for Direct AF, Transwidth, Inflection Points, Max Rate of Change, 
+    and Max Slope metrics.
 
     Parameters
     ----------
     metrics_df : pandas DataFrame
         DataFrame containing metrics data with 'Batch', 'Direct AF', 'Transwidth', 
-        'Inflection Points', and '(dC/dV)max' columns.
+        'Inflection Points', 'Max Rate of Change', and 'Max Slope' columns.
     control_limits_df : pandas DataFrame
         DataFrame containing control limits with 'Metric', 'Mean', 'LCL', 'UCL' columns.
 
@@ -128,20 +129,22 @@ def create_control_charts(metrics_df, control_limits_df):
     None
         Displays the control charts.
     """
-    # Ensure the required columns are present in both dataframes
-    required_cols_metrics = ['Batch', 'Direct AF', 'Transwidth', 'Inflection Points', 'Max Rate of Change']
+    # Update required columns list to include Max Slope
+    required_cols_metrics = ['Batch', 'Direct AF', 'Transwidth', 'Inflection Points', 
+                           'Max Rate of Change', 'Max Slope']
     required_cols_limits = ['Metric', 'Mean', 'LCL', 'UCL']
     
+    # Verify required columns
     if not all(col in metrics_df.columns for col in required_cols_metrics):
         raise ValueError(f"metrics_df is missing one or more required columns: {required_cols_metrics}")
     if not all(col in control_limits_df.columns for col in required_cols_limits):
         raise ValueError(f"control_limits_df is missing one or more required columns: {required_cols_limits}")
 
-    # Create a control chart for each metric
-    metrics = ['Direct AF', 'Transwidth', 'Inflection Points', 'Max Rate of Change']
+    # Update metrics list to include Max Slope
+    metrics = ['Direct AF', 'Transwidth', 'Inflection Points', 'Max Rate of Change', 'Max Slope']
     
-    # Set up the figure layout for all four plots
-    fig, axs = plt.subplots(4, 1, figsize=(12, 24))
+    # Adjust figure size for five plots instead of four
+    fig, axs = plt.subplots(5, 1, figsize=(12, 30))  # Increased height to accommodate new plot
     
     for idx, (metric, ax) in enumerate(zip(metrics, axs)):
         # Get the control limits for the current metric
@@ -587,3 +590,96 @@ import seaborn as sns
 # Example usage
 # fig = plot_max_rate_of_change(df, 'volume', 'derivative', 'batch', 'batch1')
 # plt.show()
+
+
+
+def plot_max_slope(df, volume_col, signal_col, batch_col, batch):
+    """
+    Plot the maximum slope calculation for a single batch using seaborn,
+    with volume on the x-axis and signal on the y-axis.
+
+    Parameters
+    ----------
+    df : pandas DataFrame
+        DataFrame containing the volume, signal, and batch data.
+    volume_col : str
+        Column name for volume data (x-axis).
+    signal_col : str
+        Column name for signal data (y-axis).
+    batch_col : str
+        Column name for batch data.
+    batch : str or int
+        The specific batch to plot.
+
+    Returns
+    -------
+    None
+        Displays the plot using matplotlib.
+
+    Notes
+    -----
+    This function visualizes the maximum slope calculation by highlighting
+    the steepest segment of the curve.
+    """
+    # Filter the dataframe for the specified batch
+    batch_data = df[df[batch_col] == batch]
+
+    if batch_data.empty:
+        raise ValueError(f"No data found for batch '{batch}' in column '{batch_col}'")
+
+    # Sort the data by volume for plotting
+    sorted_data = batch_data.sort_values(volume_col)
+
+    # Calculate slopes between consecutive points
+    x_values = sorted_data[volume_col].values
+    y_values = sorted_data[signal_col].values
+    
+    slopes = np.diff(y_values) / np.diff(x_values)
+    max_slope_idx = np.nanargmax(np.abs(slopes))
+    max_slope = slopes[max_slope_idx]
+
+    # Create the plot
+    plt.figure(figsize=(12, 8))
+    
+   
+    
+    # Plot the line connecting all points
+    plt.plot(x_values, y_values, 'b-', alpha=0.3, label='Signal curve')
+
+    # Calculate x-axis length and desired segment length (10% of x-axis)
+    x_range = x_values.max() - x_values.min()
+    segment_length = x_range * 0.1
+
+    # Calculate the center point of maximum slope
+    center_x = x_values[max_slope_idx]
+    center_y = y_values[max_slope_idx]
+
+    # Calculate the segment endpoints using the slope
+    half_length = segment_length / 2
+    dx = half_length
+    dy = max_slope * dx
+
+    # Define segment endpoints
+    x_segment = [center_x - dx, center_x + dx]
+    y_segment = [center_y - dy, center_y + dy]
+
+    # Plot the maximum slope segment with increased thickness
+    plt.plot(x_segment, y_segment, 'r--', linewidth=4, label='Maximum slope segment')
+
+    # Add text annotations in the style matching plot_transwidth
+    mid_x = np.mean(x_segment)
+    mid_y = np.mean(y_segment)
+    plt.text(mid_x, mid_y + 0.05, f'Max Slope: {max_slope:.2f}', 
+             horizontalalignment='center',
+             bbox=dict(facecolor='white', alpha=0.8))
+
+    plt.title(f'Maximum Slope Calculation for {batch_col}: {batch}')
+    plt.xlabel('Volume')
+    plt.ylabel('Signal')
+    plt.legend()
+
+    plt.tight_layout()
+    plt.show()
+
+# Example usage:
+# plot_max_slope(results, volume_col="Volume", signal_col="normalized_signal", batch_col="Batch", batch="Batch_16")

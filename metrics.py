@@ -300,6 +300,82 @@ def calculate_max_rate_of_change(df, volume_col='v', deriv_col='first_derivative
         }
 
 
+
+def calculate_max_slope(df, volume_col, signal_col, batch_col=None):
+    """
+    Calculate the maximum slope between X and Y variables from a DataFrame, maintaining the original order of batches.
+
+    Parameters
+    ----------
+    df : pandas DataFrame
+        DataFrame containing the X, Y, and optionally batch data.
+    volume_col : str
+        Column name for X variable data.
+    signal_col : str
+        Column name for Y variable data.
+    batch_col : str, optional
+        Column name for batch data. If None, calculates for the entire dataset.
+
+    Returns
+    -------
+    max_slopes : pandas Series or float
+        A Series of maximum slope values in the original batch order, or a single float if no batch_col is provided.
+
+    Notes
+    -----
+    The slope is calculated as rise over run (Δy/Δx) between consecutive points.
+    The maximum absolute slope is returned.
+    """
+    
+    def compute_max_slope(x_values, y_values):
+        # Ensure x and y are sorted together by x values
+        sorted_indices = np.argsort(x_values)
+        x_sorted = x_values[sorted_indices]
+        y_sorted = y_values[sorted_indices]
+        
+        # Calculate slopes between consecutive points
+        # slopes = Δy/Δx
+        slopes = np.diff(y_sorted) / np.diff(x_sorted)
+        
+        # Handle case where division by zero occurred
+        slopes = slopes[~np.isinf(slopes)]
+        
+        # Return the maximum absolute slope, ignoring NaN values
+        return np.nanmax(np.abs(slopes)) if len(slopes) > 0 else np.nan
+
+    if batch_col:
+        # Get unique batches in their original order
+        unique_batches = df[batch_col].unique()
+        
+        # Calculate maximum slope for each batch
+        max_slope_values = []
+        for batch in unique_batches:
+            batch_data = df[df[batch_col] == batch]
+            
+            # Skip batches with insufficient data points
+            if len(batch_data) < 2:
+                print(f"Warning: Batch {batch} has insufficient data points")
+                max_slope_values.append(np.nan)
+                continue
+                
+            max_slope = compute_max_slope(
+                batch_data[volume_col].values,
+                batch_data[signal_col].values
+            )
+            max_slope_values.append(max_slope)
+        
+        # Create a Series with the original batch order
+        return pd.Series(max_slope_values, index=unique_batches, name='max_slope')
+    else:
+        # Apply the calculation on the entire dataset
+        if len(df) < 2:
+            raise ValueError("Insufficient data points. Need at least 2 points.")
+        return compute_max_slope(df[volume_col].values, df[signal_col].values)
+
+
+
+
+
 def calculate_metrics(df, volume_col, signal_col, deriv_col, batch_col=None):
     """
     Calculate multiple chromatography metrics for each batch of data.
@@ -334,6 +410,9 @@ def calculate_metrics(df, volume_col, signal_col, deriv_col, batch_col=None):
     # Calculate Max Rate of Change
     max_rate = calculate_max_rate_of_change(df, volume_col=volume_col, deriv_col=deriv_col, batch_col=batch_col)
 
+    # Calculate Max Slope
+    max_slope_values = calculate_max_slope(df, volume_col, signal_col, batch_col)
+
     # Combine results into a DataFrame
     if batch_col:
         result_df = pd.DataFrame({
@@ -341,7 +420,8 @@ def calculate_metrics(df, volume_col, signal_col, deriv_col, batch_col=None):
             'Direct AF': direct_af_values.values,
             'Transwidth': transwidth_values.values,
             'Inflection Points': inflection_points['num_inflection_points'].values,
-            'Max Rate of Change': max_rate['Max Rate'].values
+            'Max Rate of Change': max_rate['Max Rate'].values,
+            'Max Slope': max_slope_values.values  # Added max slope values
         })
     else:
         # If no batch, just create a DataFrame with a single row
@@ -350,7 +430,8 @@ def calculate_metrics(df, volume_col, signal_col, deriv_col, batch_col=None):
             'Direct AF': [direct_af_values],
             'Transwidth': [transwidth_values],
             'Inflection Points': [inflection_points['num_inflection_points']],
-            'Max Rate of Change': [max_rate['Max Rate']]
+            'Max Rate of Change': [max_rate['Max Rate']],
+            'Max Slope': [max_slope_values]  # Added max slope value
         })
 
     # Sort the DataFrame by the Batch column if batch_col is provided
@@ -370,7 +451,7 @@ def calculate_control_limits(df):
     ----------
     df : pandas DataFrame
         DataFrame containing 'Direct AF', 'Transwidth', 'Inflection Points', 
-        and '(dC/dV)max' columns.
+        'Max Rate of Change', and 'Max Slope' columns.
 
     Returns
     -------
@@ -382,18 +463,21 @@ def calculate_control_limits(df):
     df['Transwidth'] = df['Transwidth'].astype(float)
     df['Inflection Points'] = df['Inflection Points'].astype(float)
     df['Max Rate of Change'] = df['Max Rate of Change'].astype(float)
+    df['Max Slope'] = df['Max Slope'].astype(float)  # Added Max Slope conversion
     
     # Calculate means for each metric
     direct_af_mean = df['Direct AF'].mean()
     transwidth_mean = df['Transwidth'].mean()
     inflection_mean = df['Inflection Points'].mean()
     max_rate_mean = df['Max Rate of Change'].mean()
+    max_slope_mean = df['Max Slope'].mean()  # Added Max Slope mean
     
     # Calculate standard deviations for each metric
     direct_af_std = df['Direct AF'].std()
     transwidth_std = df['Transwidth'].std()
     inflection_std = df['Inflection Points'].std()
     max_rate_std = df['Max Rate of Change'].std()
+    max_slope_std = df['Max Slope'].std()  # Added Max Slope std
     
     # Calculate control limits (mean ± 3 * standard deviation)
     direct_af_lcl = direct_af_mean - 3 * direct_af_std
@@ -404,13 +488,19 @@ def calculate_control_limits(df):
     inflection_ucl = inflection_mean + 3 * inflection_std
     max_rate_lcl = max_rate_mean - 3 * max_rate_std
     max_rate_ucl = max_rate_mean + 3 * max_rate_std
+    max_slope_lcl = max_slope_mean - 3 * max_slope_std  # Added Max Slope LCL
+    max_slope_ucl = max_slope_mean + 3 * max_slope_std  # Added Max Slope UCL
     
     # Create a DataFrame with the results
     results_df = pd.DataFrame({
-        'Metric': ['Direct AF', 'Transwidth', 'Inflection Points', 'Max Rate of Change'],
-        'Mean': [direct_af_mean, transwidth_mean, inflection_mean, max_rate_mean],
-        'LCL': [direct_af_lcl, transwidth_lcl, inflection_lcl, max_rate_lcl],
-        'UCL': [direct_af_ucl, transwidth_ucl, inflection_ucl, max_rate_ucl]
+        'Metric': ['Direct AF', 'Transwidth', 'Inflection Points', 
+                  'Max Rate of Change', 'Max Slope'],  # Added Max Slope to metrics
+        'Mean': [direct_af_mean, transwidth_mean, inflection_mean, 
+                max_rate_mean, max_slope_mean],  # Added Max Slope mean
+        'LCL': [direct_af_lcl, transwidth_lcl, inflection_lcl, 
+                max_rate_lcl, max_slope_lcl],  # Added Max Slope LCL
+        'UCL': [direct_af_ucl, transwidth_ucl, inflection_ucl, 
+                max_rate_ucl, max_slope_ucl]  # Added Max Slope UCL
     })
     
     return results_df
